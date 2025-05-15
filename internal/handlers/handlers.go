@@ -93,10 +93,7 @@ func (p *Processor) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.DataBaseService.AddUser(data.Name, data.Password, tokenStr)
-	err = p.DataBaseService.AddStats(tokenStr, 100)
-	if err != nil {
-		log.Println(err)
-	}
+	p.DataBaseService.AddStats(tokenStr, 100)
 
 	resp := TokenResponse{Token: tokenStr}
 	w.Header().Set("Content-Type", "application/json")
