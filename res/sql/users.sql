@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS users(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, 
-  user_token TEXT,
+  id TEXT PRIMARY KEY, 
   user_name TEXT,
   user_password TEXT
 );

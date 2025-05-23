@@ -16,10 +16,11 @@ func main() {
 }
 
 func run() error {
-	html, templateError := template.ParseFiles("res/templates/index.html")
-	if templateError != nil {
-		return templateError
+	pages := [2]*template.Template{
+		template.Must(template.ParseFiles("res/templates/index.html")),
+		template.Must(template.ParseFiles("res/templates/index_second.html")),
 	}
+
 	databaseService, databaseError := storage.Open(
 		"res/sql/store.db",
 		"res/sql/users.sql",
@@ -31,7 +32,7 @@ func run() error {
 	tokenService := &token.JWTService{}
 
 	p := handlers.Processor{
-		Page:            html,
+		Pages:           pages,
 		TokenService:    tokenService,
 		DataBaseService: databaseService,
 	}
@@ -39,11 +40,13 @@ func run() error {
 	defer databaseService.Close()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", p.IndexHandler)
+	mux.HandleFunc("GET /", p.MainHandler)
+	mux.HandleFunc("GET /second", p.SecondHandler)
 	mux.HandleFunc("POST /create", p.CreateUserHandler)
-	mux.HandleFunc("POST /stats", p.GetUserStatsHandler)
+	mux.HandleFunc("POST /login", p.LoginUserHandler)
+	mux.HandleFunc("GET /stats", p.GetUserStatsHandler)
 
-	port := ":8080"
+	port := ":5123"
 	log.Printf("Starting server on %s", port)
 	serverError := http.ListenAndServe(port, mux)
 	return serverError

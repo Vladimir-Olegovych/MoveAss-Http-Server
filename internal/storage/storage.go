@@ -9,88 +9,70 @@ import (
 )
 
 type User struct {
-	ID           int
-	UserToken    string
+	ID           string
 	UserName     string
 	UserPassword string
 }
 
 type Stats struct {
-	ID        int
-	UserToken string
+	ID        string
 	UserMoney int64
 }
 
 type DataBaseService interface {
 	Close()
 
-	AddUser(name, password, token string) error
-	FindUserByName(name string) (*User, error)
-	FindUserByToken(token string) (*User, error)
-
-	AddStats(token string, money int64) error
-	FindStatsByToken(token string) (*Stats, error)
+	CreateUser(id, name, password string) error
+	FindUser(name, password string) (*User, error)
+	FindStatById(id string) (*Stats, error)
 }
 
 type SQLService struct {
 	DataBase *sql.DB
 }
 
-func (s *SQLService) AddUser(name, password, token string) error {
-	query := `INSERT INTO users(user_token, user_name, user_password) VALUES (?, ?, ?)`
-	_, err := s.DataBase.Exec(query, token, name, password)
+func (s *SQLService) CreateUser(id, name, password string) error {
+	query := `INSERT INTO users(id, user_name, user_password) VALUES (?, ?, ?)`
+	_, err := s.DataBase.Exec(query, id, name, password)
+
+	if err != nil {
+		return err
+	}
+
+	query = `INSERT INTO stats(id, user_money) VALUES (?, ?)`
+	_, err = s.DataBase.Exec(query, id, 100)
+
 	return err
 }
 
-func (s *SQLService) FindUserByName(name string) (*User, error) {
-	query := `SELECT id, user_token, user_name, user_password FROM users WHERE user_name = ?`
-	row := s.DataBase.QueryRow(query, name)
+func (s *SQLService) FindUser(name, password string) (*User, error) {
+	query := `SELECT id, user_name, user_password FROM users WHERE user_name = ? AND user_password = ?`
+	row := s.DataBase.QueryRow(query, name, password)
 
 	var user User
-	err := row.Scan(&user.ID, &user.UserToken, &user.UserName, &user.UserPassword)
+	err := row.Scan(&user.ID, &user.UserName, &user.UserPassword)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("User not found")
+			return nil, errors.New("user not found or invalid password")
 		}
 		return nil, err
 	}
 	return &user, nil
 }
 
-func (s *SQLService) FindUserByToken(token string) (*User, error) {
-	query := `SELECT id, user_token, user_name, user_password FROM users WHERE user_token = ?`
-	row := s.DataBase.QueryRow(query, token)
+func (s *SQLService) FindStatById(id string) (*Stats, error) {
+	query := `SELECT id, user_money FROM stats WHERE id = ?`
+	row := s.DataBase.QueryRow(query, id)
 
-	var user User
-	err := row.Scan(&user.ID, &user.UserToken, &user.UserName, &user.UserPassword)
+	var stat Stats
+	err := row.Scan(&stat.ID, &stat.UserMoney)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("User not found")
+			return nil, errors.New("stat not found")
 		}
 		return nil, err
 	}
-	return &user, nil
-}
-
-func (s *SQLService) AddStats(token string, money int64) error {
-	query := `INSERT INTO stats(user_token, user_money) VALUES (?, ?)`
-	_, err := s.DataBase.Exec(query, token, money)
-	return err
-}
-
-func (s *SQLService) FindStatsByToken(token string) (*Stats, error) {
-	query := `SELECT id, user_token, user_money FROM stats WHERE user_token = ?`
-	row := s.DataBase.QueryRow(query, token)
-
-	var stats Stats
-	err := row.Scan(&stats.ID, &stats.UserToken, &stats.UserMoney)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, errors.New("User not found")
-		}
-		return nil, err
-	}
-	return &stats, nil
+	return &stat, nil
 }
 
 func (s *SQLService) Close() {

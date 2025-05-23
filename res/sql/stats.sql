@@ -1,5 +1,4 @@
 CREATE TABLE IF NOT EXISTS stats(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, 
-  user_token TEXT,
+  id TEXT PRIMARY KEY, 
   user_money INTEGER
 );

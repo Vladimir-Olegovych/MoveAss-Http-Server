@@ -7,21 +7,22 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 type Processor struct {
-	Page            *template.Template
+	Pages           [2]*template.Template
 	TokenService    token.TokenService
 	DataBaseService storage.DataBaseService
 }
 
-type TokenResponse struct {
+type LoginResponse struct {
 	Token string `json:"token"`
 }
 
 type UserStatsModel struct {
-	Name  string `json:"name"`
-	Money int64  `json:"money"`
+	Money int64 `json:"money"`
 }
 
 type UserDataModel struct {
@@ -29,8 +30,14 @@ type UserDataModel struct {
 	Password string `json:"password"`
 }
 
-func (p *Processor) IndexHandler(w http.ResponseWriter, r *http.Request) {
-	if err := p.Page.Execute(w, nil); err != nil {
+func (p *Processor) MainHandler(w http.ResponseWriter, r *http.Request) {
+	if err := p.Pages[0].Execute(w, nil); err != nil {
+		log.Printf("template execute error: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+func (p *Processor) SecondHandler(w http.ResponseWriter, r *http.Request) {
+	if err := p.Pages[1].Execute(w, nil); err != nil {
 		log.Printf("template execute error: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
@@ -43,14 +50,14 @@ func (p *Processor) GetUserStatsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	userData, err := p.DataBaseService.FindUserByToken(token)
+	model, err := p.TokenService.ParseToken(token)
 	if err != nil {
-		log.Printf("database error: %v", err)
-		http.Error(w, "User not found", http.StatusNotFound)
+		log.Printf("token error: %v", err)
+		http.Error(w, "Expired token not found", http.StatusNotAcceptable)
 		return
 	}
 
-	userStats, err := p.DataBaseService.FindStatsByToken(token)
+	userStats, err := p.DataBaseService.FindStatById(model.UUID)
 	if err != nil {
 		log.Printf("database error: %v", err)
 		http.Error(w, "Stats not found", http.StatusNotFound)
@@ -58,10 +65,44 @@ func (p *Processor) GetUserStatsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	resp := UserStatsModel{
-		Name:  userData.UserName,
 		Money: userStats.UserMoney,
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("json encode error: %v", err)
+	}
+}
+
+func (p *Processor) LoginUserHandler(w http.ResponseWriter, r *http.Request) {
+	var data UserDataModel
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	if !validateUserData(data) {
+		http.Error(w, "Missing name or password", http.StatusBadRequest)
+		return
+	}
+
+	userModel, err := p.DataBaseService.FindUser(data.Name, data.Password)
+	if err != nil {
+		log.Printf("database error: %v", err)
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	tokenStr, err := p.TokenService.GenerateToken(userModel.ID)
+	if err != nil {
+		log.Printf("token generation error: %v", err)
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	resp := LoginResponse{
+		Token: tokenStr,
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("json encode error: %v", err)
@@ -80,22 +121,25 @@ func (p *Processor) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if value, _ := p.DataBaseService.FindUserByName(data.Name); value != nil {
+	if value, _ := p.DataBaseService.FindUser(data.Name, data.Password); value != nil {
 		http.Error(w, "User has already created", http.StatusConflict)
 		return
 	}
 
-	tokenStr, err := p.TokenService.GenerateToken(data.Name, "user")
+	id := uuid.NewString()
+
+	tokenStr, err := p.TokenService.GenerateToken(id)
 	if err != nil {
 		log.Printf("token generation error: %v", err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
-	p.DataBaseService.AddUser(data.Name, data.Password, tokenStr)
-	p.DataBaseService.AddStats(tokenStr, 100)
+	p.DataBaseService.CreateUser(id, data.Name, data.Password)
 
-	resp := TokenResponse{Token: tokenStr}
+	resp := LoginResponse{
+		Token: tokenStr,
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("json encode error: %v", err)
